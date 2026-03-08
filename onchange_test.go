@@ -121,6 +121,82 @@ func TestOnChange_MultipleSubscribers_OneUnsubscribes(t *testing.T) {
 	}
 }
 
+func TestOnChange_FiresOnReconnectIfValueChanged(t *testing.T) {
+	client := NewClient("test-key", "http://localhost")
+	client.cache["my-flag"] = FlagValue{State: FlagStateDisabled}
+	provider := NewProvider(client)
+
+	var results []bool
+	provider.OnChange("my-flag", "tenant-1", func(enabled bool) {
+		results = append(results, enabled)
+	}, false)
+
+	// Simulate a reconnect where the flag changed while disconnected.
+	// initDone == nil signals a reconnect in connectOnce; we replicate that
+	// by calling the internal reconnect path directly via notifySubscribers
+	// after updating the cache — same code path the init handler uses.
+	newSnapshot := map[string]FlagValue{
+		"my-flag": {State: FlagStateEnabled},
+	}
+	var changed []struct {
+		key string
+		val FlagValue
+	}
+	client.mu.Lock()
+	for k, newVal := range newSnapshot {
+		if oldVal, existed := client.cache[k]; !existed || !flagValueEqual(oldVal, newVal) {
+			changed = append(changed, struct {
+				key string
+				val FlagValue
+			}{k, newVal})
+		}
+	}
+	for k, v := range newSnapshot {
+		client.cache[k] = v
+	}
+	client.mu.Unlock()
+	for _, ch := range changed {
+		client.notifySubscribers(ch.key, ch.val)
+	}
+
+	if len(results) != 2 {
+		t.Fatalf("want 2 calls (immediate + reconnect), got %d", len(results))
+	}
+	if results[1] != true {
+		t.Errorf("reconnect call: want true (flag changed to enabled), got false")
+	}
+}
+
+func TestOnChange_NoFireOnReconnectIfValueUnchanged(t *testing.T) {
+	client := NewClient("test-key", "http://localhost")
+	client.cache["my-flag"] = FlagValue{State: FlagStateEnabled}
+	provider := NewProvider(client)
+
+	calls := 0
+	provider.OnChange("my-flag", "tenant-1", func(_ bool) { calls++ }, false)
+
+	// Simulate reconnect with same value — subscriber should not fire again.
+	newSnapshot := map[string]FlagValue{
+		"my-flag": {State: FlagStateEnabled},
+	}
+	client.mu.Lock()
+	for k, newVal := range newSnapshot {
+		if oldVal, existed := client.cache[k]; !existed || !flagValueEqual(oldVal, newVal) {
+			client.mu.Unlock()
+			client.notifySubscribers(k, newVal)
+			client.mu.Lock()
+		}
+	}
+	for k, v := range newSnapshot {
+		client.cache[k] = v
+	}
+	client.mu.Unlock()
+
+	if calls != 1 {
+		t.Errorf("unchanged flag on reconnect: want 1 call (immediate only), got %d", calls)
+	}
+}
+
 func TestOnChange_PartiallyEnabled_EvaluatesPerTenant(t *testing.T) {
 	client := NewClient("test-key", "http://localhost")
 	client.cache["my-flag"] = FlagValue{

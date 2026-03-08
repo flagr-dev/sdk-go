@@ -127,11 +127,29 @@ func (c *Client) connectOnce(ctx context.Context, initDone chan<- error) error {
 			case "init":
 				var allFlags map[string]FlagValue
 				if err := json.Unmarshal([]byte(data), &allFlags); err == nil {
+					var changed []struct {
+						key string
+						val FlagValue
+					}
 					c.mu.Lock()
+					if initDone == nil {
+						// Reconnect — collect flags whose value changed while disconnected.
+						for k, newVal := range allFlags {
+							if oldVal, existed := c.cache[k]; !existed || !flagValueEqual(oldVal, newVal) {
+								changed = append(changed, struct {
+									key string
+									val FlagValue
+								}{k, newVal})
+							}
+						}
+					}
 					for k, v := range allFlags {
 						c.cache[k] = v
 					}
 					c.mu.Unlock()
+					for _, ch := range changed {
+						c.notifySubscribers(ch.key, ch.val)
+					}
 				}
 				if initDone != nil && !initSent {
 					initSent = true
@@ -184,6 +202,18 @@ func (c *Client) subscribe(flagKey string, cb func(FlagValue)) func() {
 		delete(c.subscribers[flagKey], id)
 		c.subMu.Unlock()
 	}
+}
+
+func flagValueEqual(a, b FlagValue) bool {
+	if a.State != b.State || len(a.EnabledList) != len(b.EnabledList) {
+		return false
+	}
+	for i := range a.EnabledList {
+		if a.EnabledList[i] != b.EnabledList[i] {
+			return false
+		}
+	}
+	return true
 }
 
 func (c *Client) notifySubscribers(flagKey string, val FlagValue) {
