@@ -21,18 +21,19 @@ go get github.com/flagr-dev/sdk-go
 package main
 
 import (
+    "context"
     featureflags "github.com/flagr-dev/sdk-go"
 )
 
 func main() {
-    client := featureflags.NewClient("sdk_live_xxx", "https://api.flagr.dev")
-    provider := featureflags.NewProvider(client)
+    client := featureflags.NewClient("sdk_live_xxx")
 
     // Connect to the SSE stream and seed the local cache
-    if err := provider.Init(); err != nil {
+    if err := client.Connect(context.Background()); err != nil {
         panic(err)
     }
-    defer provider.Close()
+
+    provider := featureflags.NewProvider(client)
 
     // IsEnabled — synchronous local evaluation, no network call
     // TenantID can be a user ID, org ID, account ID, or any entity identifier
@@ -116,10 +117,10 @@ Go modules are versioned by git tags. There is no build or publish step — `go 
    go test ./...
    ```
 
-2. Create and push a tag matching the pattern `sdk-go/v*`:
+2. Create and push a version tag:
    ```bash
-   git tag sdk-go/v0.1.1
-   git push origin sdk-go/v0.1.1
+   git tag v0.1.1
+   git push origin v0.1.1
    ```
 
 3. The new version is immediately available via:

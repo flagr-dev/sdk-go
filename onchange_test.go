@@ -1,0 +1,142 @@
+package featureflags
+
+import "testing"
+
+func TestOnChange_FiresImmediately_FlagEnabled(t *testing.T) {
+	client := NewClient("test-key", "http://localhost")
+	client.cache["my-flag"] = FlagValue{State: FlagStateEnabled}
+	provider := NewProvider(client)
+
+	var got bool
+	calls := 0
+	provider.OnChange("my-flag", "tenant-1", func(enabled bool) {
+		got = enabled
+		calls++
+	}, false)
+
+	if calls != 1 {
+		t.Fatalf("want 1 immediate call, got %d", calls)
+	}
+	if !got {
+		t.Errorf("enabled flag: want true, got false")
+	}
+}
+
+func TestOnChange_FiresImmediately_FlagNotFound_UsesDefault(t *testing.T) {
+	client := NewClient("test-key", "http://localhost")
+	provider := NewProvider(client)
+
+	var got bool
+	calls := 0
+	provider.OnChange("nonexistent", "tenant-1", func(enabled bool) {
+		got = enabled
+		calls++
+	}, true)
+
+	if calls != 1 {
+		t.Fatalf("want 1 immediate call, got %d", calls)
+	}
+	if !got {
+		t.Errorf("missing flag: want default (true), got false")
+	}
+}
+
+func TestOnChange_FiresOnUpdate(t *testing.T) {
+	client := NewClient("test-key", "http://localhost")
+	client.cache["my-flag"] = FlagValue{State: FlagStateDisabled}
+	provider := NewProvider(client)
+
+	var results []bool
+	provider.OnChange("my-flag", "tenant-1", func(enabled bool) {
+		results = append(results, enabled)
+	}, false)
+
+	client.notifySubscribers("my-flag", FlagValue{State: FlagStateEnabled})
+
+	if len(results) != 2 {
+		t.Fatalf("want 2 calls (immediate + update), got %d", len(results))
+	}
+	if results[0] != false {
+		t.Errorf("first call: want false (initial disabled), got true")
+	}
+	if results[1] != true {
+		t.Errorf("second call: want true (after update), got false")
+	}
+}
+
+func TestOnChange_Unsubscribe_StopsFiring(t *testing.T) {
+	client := NewClient("test-key", "http://localhost")
+	client.cache["my-flag"] = FlagValue{State: FlagStateEnabled}
+	provider := NewProvider(client)
+
+	calls := 0
+	sub := provider.OnChange("my-flag", "tenant-1", func(_ bool) {
+		calls++
+	}, false)
+
+	sub.Unsubscribe()
+	client.notifySubscribers("my-flag", FlagValue{State: FlagStateDisabled})
+
+	if calls != 1 {
+		t.Errorf("want 1 call (immediate only), got %d", calls)
+	}
+}
+
+func TestOnChange_MultipleSubscribers_BothFire(t *testing.T) {
+	client := NewClient("test-key", "http://localhost")
+	client.cache["my-flag"] = FlagValue{State: FlagStateEnabled}
+	provider := NewProvider(client)
+
+	calls1, calls2 := 0, 0
+	provider.OnChange("my-flag", "tenant-1", func(_ bool) { calls1++ }, false)
+	provider.OnChange("my-flag", "tenant-2", func(_ bool) { calls2++ }, false)
+
+	client.notifySubscribers("my-flag", FlagValue{State: FlagStateDisabled})
+
+	if calls1 != 2 {
+		t.Errorf("subscriber 1: want 2 calls (immediate + update), got %d", calls1)
+	}
+	if calls2 != 2 {
+		t.Errorf("subscriber 2: want 2 calls (immediate + update), got %d", calls2)
+	}
+}
+
+func TestOnChange_MultipleSubscribers_OneUnsubscribes(t *testing.T) {
+	client := NewClient("test-key", "http://localhost")
+	client.cache["my-flag"] = FlagValue{State: FlagStateEnabled}
+	provider := NewProvider(client)
+
+	calls1, calls2 := 0, 0
+	sub1 := provider.OnChange("my-flag", "tenant-1", func(_ bool) { calls1++ }, false)
+	provider.OnChange("my-flag", "tenant-2", func(_ bool) { calls2++ }, false)
+
+	sub1.Unsubscribe()
+	client.notifySubscribers("my-flag", FlagValue{State: FlagStateDisabled})
+
+	if calls1 != 1 {
+		t.Errorf("unsubscribed: want 1 call (immediate only), got %d", calls1)
+	}
+	if calls2 != 2 {
+		t.Errorf("active subscriber: want 2 calls, got %d", calls2)
+	}
+}
+
+func TestOnChange_PartiallyEnabled_EvaluatesPerTenant(t *testing.T) {
+	client := NewClient("test-key", "http://localhost")
+	client.cache["my-flag"] = FlagValue{
+		State:       FlagStatePartiallyEnabled,
+		EnabledList: []string{"tenant-allowed"},
+	}
+	provider := NewProvider(client)
+
+	var gotAllowed, gotBlocked bool
+	provider.OnChange("my-flag", "tenant-allowed", func(v bool) { gotAllowed = v }, false)
+	provider.OnChange("my-flag", "tenant-other", func(v bool) { gotBlocked = v }, false)
+
+	if !gotAllowed {
+		t.Errorf("tenant in list: want true, got false")
+	}
+	if gotBlocked {
+		t.Errorf("tenant not in list: want false, got true")
+	}
+}
