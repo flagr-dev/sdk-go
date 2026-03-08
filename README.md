@@ -7,7 +7,20 @@ Connects to the Flagr Evaluation API via SSE, seeds a local in-memory cache from
 ## Prerequisites
 
 - Go >= 1.23
-- An active Flagr account and an SDK key (`sdk_live_...`) from the [dashboard](https://flagr.dev)
+- A Flagr account — sign up free at [flagr.dev](https://flagr.dev)
+
+## Get your SDK key
+
+This SDK connects to the hosted Flagr service at [flagr.dev](https://flagr.dev). No self-hosting or infrastructure required — Flagr manages the flag storage, evaluation API, and real-time delivery for you.
+
+To get an SDK key:
+
+1. Sign up at [flagr.dev](https://flagr.dev) — the Hobby plan is free
+2. Create a **project** (e.g. `my-app`)
+3. Create an **environment** inside the project (e.g. `production`, `staging`)
+4. Copy the `sdk_live_...` key shown on the environment page
+
+Each environment has its own SDK key. Use the key for the environment your service is running in. Keep it secret — treat it like an API key.
 
 ## Install
 
