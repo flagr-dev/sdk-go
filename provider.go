@@ -16,19 +16,30 @@ func NewProvider(client *Client) *Provider {
 
 // IsEnabled checks whether a flag is enabled for the given tenant without
 // the OpenFeature abstraction. Returns defaultValue if the flag is not found.
-func (p *Provider) IsEnabled(flagKey, tenantID string, defaultValue bool) bool {
+// tenantID is optional — omit or pass "" for flags that don't use partial rollout.
+// For partially_enabled flags, an empty tenantID always returns false.
+func (p *Provider) IsEnabled(flagKey string, defaultValue bool, tenantID ...string) bool {
+	tid := ""
+	if len(tenantID) > 0 {
+		tid = tenantID[0]
+	}
 	val, ok := p.client.GetFlagValue(flagKey)
 	if !ok {
 		return defaultValue
 	}
-	return evaluate(val, EvaluationContext{TenantID: tenantID}).Value
+	return evaluate(val, EvaluationContext{TenantID: tid}).Value
 }
 
 // OnChange registers a callback for flagKey that fires immediately with the
 // current evaluated value, then again on every SSE update. Returns a
 // Subscription — call Unsubscribe when done to stop receiving callbacks.
-func (p *Provider) OnChange(flagKey, tenantID string, cb func(bool), defaultValue bool) *Subscription {
-	evalCtx := EvaluationContext{TenantID: tenantID}
+// tenantID is optional — omit or pass "" for flags that don't use partial rollout.
+func (p *Provider) OnChange(flagKey string, cb func(bool), defaultValue bool, tenantID ...string) *Subscription {
+	tid := ""
+	if len(tenantID) > 0 {
+		tid = tenantID[0]
+	}
+	evalCtx := EvaluationContext{TenantID: tid}
 	// Fire immediately with the current value.
 	val, ok := p.client.GetFlagValue(flagKey)
 	if ok {
