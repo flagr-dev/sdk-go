@@ -49,11 +49,13 @@ func main() {
     provider := featureflags.NewProvider(client)
 
     // IsEnabled — synchronous local evaluation, no network call
-    // TenantID can be a user ID, org ID, account ID, or any entity identifier
+    // Signature: IsEnabled(flagKey, defaultValue, tenantID...)
+    // tenantID is optional — omit for flags that don't use partial rollout.
+    // For partially_enabled flags, an empty tenantID always returns false.
     enabled := provider.IsEnabled(
-        "new-checkout",                          // flag key
-        "a1b2c3d4-e5f6-7890-abcd-ef1234567890", // tenant ID
-        false,                                   // default value if flag not found
+        "new-checkout", // flag key
+        false,          // default value if flag not found
+        "a1b2c3d4-e5f6-7890-abcd-ef1234567890", // tenant ID (optional)
     )
 
     if enabled {
@@ -83,13 +85,14 @@ func main() {
 
     provider := featureflags.NewProvider(client)
 
+    // Signature: OnChange(flagKey, callback, defaultValue, tenantID...)
     sub := provider.OnChange(
-        "new-checkout",                          // flag key
-        "a1b2c3d4-e5f6-7890-abcd-ef1234567890", // tenant ID
+        "new-checkout", // flag key
         func(enabled bool) {
             fmt.Println("new-checkout is now", enabled)
         },
         false, // default value if flag not found
+        "a1b2c3d4-e5f6-7890-abcd-ef1234567890", // tenant ID (optional)
     )
     defer sub.Unsubscribe()
 
