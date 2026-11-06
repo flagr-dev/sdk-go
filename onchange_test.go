@@ -9,10 +9,10 @@ func TestOnChange_FiresImmediately_FlagEnabled(t *testing.T) {
 
 	var got bool
 	calls := 0
-	provider.OnChange("my-flag", "tenant-1", func(enabled bool) {
+	provider.OnChange("my-flag", func(enabled bool) {
 		got = enabled
 		calls++
-	}, false)
+	}, false, "tenant-1")
 
 	if calls != 1 {
 		t.Fatalf("want 1 immediate call, got %d", calls)
@@ -28,10 +28,10 @@ func TestOnChange_FiresImmediately_FlagNotFound_UsesDefault(t *testing.T) {
 
 	var got bool
 	calls := 0
-	provider.OnChange("nonexistent", "tenant-1", func(enabled bool) {
+	provider.OnChange("nonexistent", func(enabled bool) {
 		got = enabled
 		calls++
-	}, true)
+	}, true, "tenant-1")
 
 	if calls != 1 {
 		t.Fatalf("want 1 immediate call, got %d", calls)
@@ -47,9 +47,9 @@ func TestOnChange_FiresOnUpdate(t *testing.T) {
 	provider := NewProvider(client)
 
 	var results []bool
-	provider.OnChange("my-flag", "tenant-1", func(enabled bool) {
+	provider.OnChange("my-flag", func(enabled bool) {
 		results = append(results, enabled)
-	}, false)
+	}, false, "tenant-1")
 
 	client.notifySubscribers("my-flag", FlagValue{State: FlagStateEnabled})
 
@@ -70,9 +70,9 @@ func TestOnChange_Unsubscribe_StopsFiring(t *testing.T) {
 	provider := NewProvider(client)
 
 	calls := 0
-	sub := provider.OnChange("my-flag", "tenant-1", func(_ bool) {
+	sub := provider.OnChange("my-flag", func(_ bool) {
 		calls++
-	}, false)
+	}, false, "tenant-1")
 
 	sub.Unsubscribe()
 	client.notifySubscribers("my-flag", FlagValue{State: FlagStateDisabled})
@@ -88,8 +88,8 @@ func TestOnChange_MultipleSubscribers_BothFire(t *testing.T) {
 	provider := NewProvider(client)
 
 	calls1, calls2 := 0, 0
-	provider.OnChange("my-flag", "tenant-1", func(_ bool) { calls1++ }, false)
-	provider.OnChange("my-flag", "tenant-2", func(_ bool) { calls2++ }, false)
+	provider.OnChange("my-flag", func(_ bool) { calls1++ }, false, "tenant-1")
+	provider.OnChange("my-flag", func(_ bool) { calls2++ }, false, "tenant-2")
 
 	client.notifySubscribers("my-flag", FlagValue{State: FlagStateDisabled})
 
@@ -107,8 +107,8 @@ func TestOnChange_MultipleSubscribers_OneUnsubscribes(t *testing.T) {
 	provider := NewProvider(client)
 
 	calls1, calls2 := 0, 0
-	sub1 := provider.OnChange("my-flag", "tenant-1", func(_ bool) { calls1++ }, false)
-	provider.OnChange("my-flag", "tenant-2", func(_ bool) { calls2++ }, false)
+	sub1 := provider.OnChange("my-flag", func(_ bool) { calls1++ }, false, "tenant-1")
+	provider.OnChange("my-flag", func(_ bool) { calls2++ }, false, "tenant-2")
 
 	sub1.Unsubscribe()
 	client.notifySubscribers("my-flag", FlagValue{State: FlagStateDisabled})
@@ -127,9 +127,9 @@ func TestOnChange_FiresOnReconnectIfValueChanged(t *testing.T) {
 	provider := NewProvider(client)
 
 	var results []bool
-	provider.OnChange("my-flag", "tenant-1", func(enabled bool) {
+	provider.OnChange("my-flag", func(enabled bool) {
 		results = append(results, enabled)
-	}, false)
+	}, false, "tenant-1")
 
 	// Simulate a reconnect where the flag changed while disconnected.
 	// initDone == nil signals a reconnect in connectOnce; we replicate that
@@ -173,7 +173,7 @@ func TestOnChange_NoFireOnReconnectIfValueUnchanged(t *testing.T) {
 	provider := NewProvider(client)
 
 	calls := 0
-	provider.OnChange("my-flag", "tenant-1", func(_ bool) { calls++ }, false)
+	provider.OnChange("my-flag", func(_ bool) { calls++ }, false, "tenant-1")
 
 	// Simulate reconnect with same value — subscriber should not fire again.
 	newSnapshot := map[string]FlagValue{
@@ -206,8 +206,8 @@ func TestOnChange_PartiallyEnabled_EvaluatesPerTenant(t *testing.T) {
 	provider := NewProvider(client)
 
 	var gotAllowed, gotBlocked bool
-	provider.OnChange("my-flag", "tenant-allowed", func(v bool) { gotAllowed = v }, false)
-	provider.OnChange("my-flag", "tenant-other", func(v bool) { gotBlocked = v }, false)
+	provider.OnChange("my-flag", func(v bool) { gotAllowed = v }, false, "tenant-allowed")
+	provider.OnChange("my-flag", func(v bool) { gotBlocked = v }, false, "tenant-other")
 
 	if !gotAllowed {
 		t.Errorf("tenant in list: want true, got false")
